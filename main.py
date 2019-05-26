@@ -1,11 +1,15 @@
 import copy
 from collections import deque
+from time import sleep
 
 class Formula:
     def __init__(self, symbol, children, text):
         self.symbol = symbol
         self.children = children
         self.text = text
+    
+    def __repr__(self):
+        return self.text
 
     def updateText(self):
         self.text = self.toText()
@@ -50,11 +54,15 @@ class Formula:
                     s = (self.text[m:])[:i-m]
                     self.children.append(Formula('', [], s))
                     self.children[-1].toTree()
+    
+    def contains(self, l): #le metes una hoja (leaf) l (por ejemplo, "a1", "p3", o "A1") en forma de texto y te dice si el arbol contiene a esa hoja. Asume que el texto es igual al arbol.
+        return l == self.text or l+')' in self.text or l+',' in self.text #para que no flashee a1 en a17.
 
 class GraphNode:
     def __init__(self, name):
         self.name = name
-        self.arrowsTo = [] # lista de otros GraphNode a los que apunta.
+        self.arrowsTo = [] # lista de GraphNode a los que apunta.
+        self.arrowsFrom = [] # lista de GraphNode que apuntan a este.
         self.loops = 'no idea'
 
 class DGraph:
@@ -62,6 +70,7 @@ class DGraph:
         self.nodes = nodes
         self.isOrphan = {}
         self.findOrphans()
+        self.buildArrowsFrom()
 
     def findOrphans(self):
         self.isOrphan = {}
@@ -70,6 +79,11 @@ class DGraph:
         for k in self.nodes:
             for ar in self.nodes[k].arrowsTo:
                 self.isOrphan[ar.name] = False
+    
+    def buildArrowsFrom(self):
+        for k in self.nodes:
+            for ar in self.nodes[k].arrowsTo:
+                self.nodes[ar.name].arrowsFrom.append(self.nodes[k])
 
     def hasLoops(self):
         visited = set()
@@ -117,10 +131,18 @@ def feetea(f, a, S): #determina si se puede meter cosas adentro de f (en las var
     aAndpListAux(a, S)
     if feeteaAux(f, a, S):
         buildTheGraph(S)
-        print(len(G.nodes['a1'].arrowsTo))
+        #print(len(G.nodes['a1'].arrowsTo))
         #chequeo si no quedo con loops
-        fillGaps('a')
-        chew(S)
+        print("tamano del grafo: ", len(G.nodes))
+        if G.hasLoops():
+            print("aca")
+            print(extension)
+            sleep(2)
+            return chewForLoops() #en vez de devolver False, usar chewForLoops()
+            #return False #No es tal cual asi, hay que terminar de pensar los casitos en los que no se agranda el texto al loopear
+        else:
+            fillGaps('a')
+            chew(S)
         return True
     else:
         return False
@@ -161,8 +183,10 @@ def feeteaAux(f, a, S):
                         return True
                 elif not extension[f.symbol] == [] and extension[a.symbol] == []: #si quedó alguien en la metavariable de f y no quedó nadie en la de a.
                     extension[a.symbol].append(f)
+                    return True
                 elif extension[f.symbol] == [] and not extension[a.symbol] == []: #si quedó alguien en la metavariable de a y no quedó nadie en la de f.
                     extension[f.symbol].append(a)
+                    return True
                 else: #si quedó alguien en la metavariable de f y alguien en la de a.
                     return feeteaAux(extension[f.symbol][0], extension[a.symbol][0])
 
@@ -214,17 +238,20 @@ def fillGaps(s): #mira extension y los a los valores que tienen su lista vacia, 
             newVars.append(s+str(i))
             i += 1
 
-#OJO QUE EL EJEMPLO FUNCO JOYA PERO TIRABA UNA ITERACION DE MAS. CHEQUEAR
-def chew(S): #cuando extension tiene exactamente un elemento por lista, esta funcion va agregando capas de elementos que cada uno es igual al anterior pero reemplazando cada variable que empiece con caracter en S por lo que tiene esa variable en la capa anterior de su lista en extension.
-    finished = {}
+def chew(): #cuando extension tiene exactamente un elemento por lista, esta funcion va agregando capas de elementos que cada uno es igual al anterior pero reemplazando cada variable que sea una key en extension por lo que tiene esa variable en la capa anterior de su lista en extension.
     numFinished = 0
     global extLayers
     extLayers = 1
-    for k in extension:
-        finished[k] = False
     while numFinished < len(extension):
         for k in extension:
-            extension[k].append(chewAux(copy.deepcopy(extension[k][-1])))
+            #print(extLayers, k, ":")
+            newf = copy.deepcopy(extension[k][-1])
+            #print(newf.text)
+            newf = copy.deepcopy(chewAux(newf))
+            #print(newf.text)
+            #newf.updateText()
+            #print(newf.text)
+            extension[k].append(newf)
             if extLayers > 1:
                 if extension[k][-1].text == extension[k][-2].text and not extension[k][-2].text == extension[k][-3].text:
                     numFinished += 1
@@ -232,15 +259,73 @@ def chew(S): #cuando extension tiene exactamente un elemento por lista, esta fun
                 if extension[k][-1].text == extension[k][-2].text:
                     numFinished += 1
         extLayers += 1
+#comente esta version de chewAux para probar hacer una nueva con la unica diferencia de que ahora, la descripcion de chew seria esta (marco con asteriscos el cambio):
+# "cuando extension tiene exactamente un elemento por lista, esta funcion va agregando capas de elementos que cada uno es igual al anterior pero reemplazando cada variable que sea una key en extension por lo que tiene esa variable en la capa *0* de su lista en extension."
+'''
+#FUNCOOOOOOO :DDDD
+def chewAux(f):
+    if f.symbol in extension:
+        print("entra en el if")
+        f = copy.deepcopy(extension[f.symbol][extLayers - 1])
+        print(f.text)
+    else:
+        print("entra en el else")
+        for i in range(len(f.children)):
+            f.children[i] = copy.deepcopy(chewAux(f.children[i]))
+            print(f.children[i].text)
+    #f.updateText()
+    print('va a returnear', f.text)
+    return f
+'''
 
 def chewAux(f):
     if f.symbol in extension:
-        f = copy.deepcopy(extension[f.symbol][extLayers - 1])
+        #print("entra en el if")
+        f = copy.deepcopy(extension[f.symbol][0])
+        #print(f.text)
     else:
-        for ch in f.children:
-            chewAux(ch)
+        #print("entra en el else")
+        for i in range(len(f.children)):
+            f.children[i] = copy.deepcopy(chewAux(f.children[i]))
+            #print(f.children[i].text)
+    #f.updateText()
+    #print('va a returnear', f.text)
+    f.updateText()
     return f
 
+#LE FALTA ASIGNAR NUEVAS a_i.
+def chewForLoops(): #es igual a chew, solo que esta se usa cuando el grafo tiene loops. Va controlando que si hay un loop no se agrande, o sea, que todos los loops sean de la forma "la metavariable k llego a tener que ser reemplazada por la variable k". (Y no por ejemplo que a1 sea reemplazado por ->(a1,(algo))).
+    numFinished = 0
+    global finalReplacing
+    finalReplacing = {}
+    for k in extension:
+        finalReplacing[k] = []
+    global extLayers
+    extLayers = 1
+    while numFinished < len(extension) and extLayers <= len(G.nodes):
+        for k in extension:
+            newf = copy.deepcopy(extension[k][-1])
+            newf = copy.deepcopy(chewAux(newf)) #(usa la misma auxiliar que chew()).
+            #newf.updateText()
+            extension[k].append(newf)
+            if extension[k][-1].contains(k):
+                if extension[k][-1].text == k:
+                    if finalReplacing[k] == []:
+                        finalReplacing[k].append(extension[k][-1])
+                        numFinished += 1
+                else:
+                    return False
+            else:
+                if extension[k][-1].text == extension[k][-2].text:
+                    if finalReplacing[k] == []:
+                        finalReplacing[k].append(extension[k][-1])
+                        numFinished += 1
+        extLayers += 1
+        '''
+    loopedVariables = []
+    for k in finalReplacing:
+        '''
+    return True
 
 
 f = Formula('^', [], '')
@@ -269,6 +354,18 @@ ps2 = ProofState()
 ps2.assumptions.append(f2)
 ps2.formulas.append(f2)
 ps2.previousState = ps
+
+t000 = Formula('', [], 'V(p1,p2)')
+t000.toTree()
+
+t0 = Formula('', [], 'a1')
+t0.toTree()
+
+t00 = Formula('', [], 'a2')
+t00.toTree()
+
+t01 = Formula('', [], '-->(a1,-->(a1,A1))')
+t01.toTree()
 
 t1= Formula('A1', [], '')
 t1.updateText()
@@ -324,6 +421,38 @@ t17.toTree()
 t18 = Formula('', [], '-->(p1,-->(a2,a3))')
 t18.toTree()
 
+t19 = Formula('', [], '-->(a1,a2)')
+t19.toTree()
+
+t20 = Formula('', [], '-->(->(a2,a2),A1)')
+t20.toTree()
+
+t21 = Formula('', [], '-->(^(a1,a2),^(p1,p2))')
+t21.toTree()
+
+t22 = Formula('', [], '-->(^(V(A1,not(a2)),not(A1)),^(^(not(A3),not(not(A2))),p2))')
+t22.toTree()
+
+t23 = Formula('', [], '->(a1,a2)')
+t23.toTree()
+
+t24 = Formula('', [], '->(a2,a1)')
+t24.toTree()
+
+t25 = Formula('', [], '->(a1,a2,a3,a4,a5)')
+t25.toTree()
+
+t26 = Formula('', [], '->(a2,a3,a4,a5,a1)')
+t26.toTree()
+
+t27 = Formula('', [], '->(V(a2,a2),V(a3,a3),V(A1,A1))')
+t27.toTree()
+
+t28 = Formula('', [], '->(a2,a3,a4,a5,a3)')
+t28.toTree()
+
+t29 = Formula('', [], '->(->(a2,a3),A1,a4,a5,a1)')
+t29.toTree()
 
 n1 = GraphNode('n1')
 n2 = GraphNode('n2')
@@ -337,4 +466,12 @@ n4.arrowsTo.append(n5)
 n5.arrowsTo.append(n1)
 
 gr = DGraph({'n1': n1,'n2': n2, 'n3': n3, 'n4': n4, 'n5': n5})
-print(gr.hasLoops())
+
+'''
+def printExtension():
+    for k in extension:
+        print(k, ":")
+'''
+
+def testeo(r):
+    return r + 1
